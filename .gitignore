@@ -1,0 +1,23 @@
+# Ignore virtual environment
+venv/
+
+# Ignore VSCode settings
+.vscode/
+
+# Ignore pytest cache
+.pytest_cache/
+
+# Ignore old script
+crypto_price_streamlit.py
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore system files
+.DS_Store
+Thumbs.db
