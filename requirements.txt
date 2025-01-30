@@ -1,5 +1,8 @@
-streamlit
-matplotlib
+requests
 pandas
 numpy
-requests
+scikit-learn
+xgboost
+tensorflow
+matplotlib
+plotly

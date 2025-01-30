@@ -10,9 +10,21 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 import matplotlib.pyplot as plt
 import plotly.express as px
+import datetime
 
-# Function to fetch real-time cryptocurrency data for multiple coins
 def fetch_crypto_data(cryptos, currency='usd', days=30, interval='daily'):
+    """
+    Fetch real-time cryptocurrency data for multiple coins.
+
+    Parameters:
+    cryptos (list): List of cryptocurrency symbols.
+    currency (str): The currency in which to fetch the prices.
+    days (int): Number of days of data to fetch.
+    interval (str): Data interval (e.g., 'daily').
+
+    Returns:
+    dict: Dictionary containing dataframes for each cryptocurrency.
+    """
     all_data = {}
     for crypto in cryptos:
         url = f"https://api.coingecko.com/api/v3/coins/{crypto}/market_chart"
@@ -34,6 +46,101 @@ def fetch_crypto_data(cryptos, currency='usd', days=30, interval='daily'):
             print(f"Failed to fetch data for {crypto}: {e}")
             all_data[crypto] = None
     return all_data
+
+def add_technical_features(data, close_column):
+    """
+    Add technical features to the data.
+
+    Parameters:
+    data (DataFrame): The dataframe containing the cryptocurrency data.
+    close_column (str): The name of the column with closing prices.
+
+    Returns:
+    DataFrame: The dataframe with added technical features.
+    """
+    data['MA_10'] = data[close_column].rolling(window=10).mean()  # 10-day Moving Average
+    data['MA_20'] = data[close_column].rolling(window=20).mean()  # 20-day Moving Average
+    data['Pct_Change'] = data[close_column].pct_change() * 100  # Percentage Change
+    data['RSI'] = calculate_rsi(data[close_column], window=14)  # RSI (14-day)
+    return data
+
+def calculate_rsi(series, window):
+    """
+    Calculate the Relative Strength Index (RSI).
+
+    Parameters:
+    series (Series): The series of closing prices.
+    window (int): The window size for calculating RSI.
+
+    Returns:
+    Series: The RSI values.
+    """
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+def generate_insights(predictions, actuals, crypto_name):
+    """
+    Generate real-time insights based on the last available predictions.
+
+    Parameters:
+    predictions (array): The array of predicted prices.
+    actuals (array): The array of actual prices.
+    crypto_name (str): The name of the cryptocurrency.
+
+    Returns:
+    None
+    """
+    today = datetime.datetime.now().strftime('%Y-%m-%d')
+    last_pred = predictions[-1] if len(predictions) > 0 else None
+    last_actual = actuals[-1] if len(actuals) > 0 else None
+    if last_pred is not None and last_actual is not None:
+        if last_actual != 0:
+            change = ((last_pred - last_actual) / last_actual) * 100
+        else:
+            change = 0
+        print(f"Insights for {crypto_name.capitalize()} on {today}:")
+        print(f"  - Predicted Price: ${last_pred:.2f}")
+        print(f"  - Actual Price: ${last_actual:.2f}")
+        print(f"  - Predicted Change: {change:.2f}%\n")
+    else:
+        print(f"No valid data available for {crypto_name.capitalize()} on {today}\n")
+
+def generate_multi_crypto_insights(predictions_dict, actuals_dict, cryptos, scaler_dict):
+    """
+    Generate insights for multiple cryptocurrencies.
+
+    Parameters:
+    predictions_dict (dict): Dictionary of predicted prices for each cryptocurrency.
+    actuals_dict (dict): Dictionary of actual prices for each cryptocurrency.
+    cryptos (list): List of cryptocurrency symbols.
+    scaler_dict (dict): Dictionary of scalers for each cryptocurrency.
+
+    Returns:
+    None
+    """
+    for crypto in cryptos:
+        if crypto in predictions_dict and crypto in actuals_dict:
+            predictions = predictions_dict[crypto]
+            actuals = actuals_dict[crypto]
+            if len(predictions) > 0 and len(actuals) > 0:
+                # Ensure actuals is a numpy array
+                actuals = np.array(actuals)
+                # Reshape predictions to 2D array
+                last_pred = scaler_dict[crypto].inverse_transform(predictions[-1].reshape(-1, 1))[0][0]
+                last_actual = scaler_dict[crypto].inverse_transform(actuals[-1].reshape(-1, 1))[0][0]
+                change = ((last_pred - last_actual) / last_actual) * 100 if last_actual != 0 else 0
+                print(f"Insights for {crypto.capitalize()}:")
+                print(f"  - Predicted Price: ${last_pred:.2f}")
+                print(f"  - Actual Price: ${last_actual:.2f}")
+                print(f"  - Predicted Change: {change:.2f}%\n")
+            else:
+                print(f"No valid data available for {crypto.capitalize()}\n")
+        else:
+            print(f"Data missing for {crypto.capitalize()}\n")
 
 # Fetch data for Bitcoin, Ethereum, and Cardano
 cryptos = ['bitcoin', 'ethereum', 'cardano']
@@ -87,23 +194,6 @@ if not combined_data.empty:
         fig.show()
     else:
         print("No valid columns to plot.")
-
-# Add Moving Averages, Percent Changes, and RSI
-def add_technical_features(data, close_column):
-    data['MA_10'] = data[close_column].rolling(window=10).mean()  # 10-day Moving Average
-    data['MA_20'] = data[close_column].rolling(window=20).mean()  # 20-day Moving Average
-    data['Pct_Change'] = data[close_column].pct_change() * 100  # Percentage Change
-    data['RSI'] = calculate_rsi(data[close_column], window=14)  # RSI (14-day)
-    return data
-
-# RSI Calculation
-def calculate_rsi(series, window):
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
 
 # Apply technical features to the combined data
 if not combined_data.empty:
@@ -243,47 +333,6 @@ if not combined_data.empty:
             print(f"{model}: MSE={scores['MSE']:.2f}, MAE={scores['MAE']:.2f}")
 else:
     print("No data available for model comparison.")
-
-import datetime
-
-# Real-time insights based on the last available predictions
-def generate_insights(predictions, actuals, crypto_name):
-    today = datetime.datetime.now().strftime('%Y-%m-%d')
-    last_pred = predictions[-1] if len(predictions) > 0 else None
-    last_actual = actuals[-1] if len(actuals) > 0 else None
-    if last_pred is not None and last_actual is not None:
-        if last_actual != 0:
-            change = ((last_pred - last_actual) / last_actual) * 100
-        else:
-            change = 0
-        print(f"Insights for {crypto_name.capitalize()} on {today}:")
-        print(f"  - Predicted Price: ${last_pred:.2f}")
-        print(f"  - Actual Price: ${last_actual:.2f}")
-        print(f"  - Predicted Change: {change:.2f}%\n")
-    else:
-        print(f"No valid data available for {crypto_name.capitalize()} on {today}\n")
-
-# Generate insights for multiple cryptocurrencies
-def generate_multi_crypto_insights(predictions_dict, actuals_dict, cryptos, scaler_dict):
-    for crypto in cryptos:
-        if crypto in predictions_dict and crypto in actuals_dict:
-            predictions = predictions_dict[crypto]
-            actuals = actuals_dict[crypto]
-            if len(predictions) > 0 and len(actuals) > 0:
-                # Ensure actuals is a numpy array
-                actuals = np.array(actuals)
-                # Reshape predictions to 2D array
-                last_pred = scaler_dict[crypto].inverse_transform(predictions[-1].reshape(-1, 1))[0][0]
-                last_actual = scaler_dict[crypto].inverse_transform(actuals[-1].reshape(-1, 1))[0][0]
-                change = ((last_pred - last_actual) / last_actual) * 100 if last_actual != 0 else 0
-                print(f"Insights for {crypto.capitalize()}:")
-                print(f"  - Predicted Price: ${last_pred:.2f}")
-                print(f"  - Actual Price: ${last_actual:.2f}")
-                print(f"  - Predicted Change: {change:.2f}%\n")
-            else:
-                print(f"No valid data available for {crypto.capitalize()}\n")
-        else:
-            print(f"Data missing for {crypto.capitalize()}\n")
 
 # Example: Placeholder predictions and actuals for multiple cryptocurrencies
 predictions_dict = {'bitcoin': y_pred_lstm, 'ethereum': y_pred_lstm, 'cardano': y_pred_lstm}  # Replace with actual predictions
